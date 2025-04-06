@@ -40,6 +40,18 @@ typedef struct {
   double satisfaction_score;
 } RiskEntry;
 
+typedef struct {
+  char cohort[MAX_NAME];
+  int count;
+  int high;
+  int medium;
+  int low;
+  double high_ratio;
+  double avg_days;
+  double avg_attendance;
+  double avg_satisfaction;
+} CohortAlert;
+
 static void trim(char *s) {
   char *end;
   while (isspace((unsigned char)*s)) s++;
@@ -112,12 +124,15 @@ static const char *risk_label(int score) {
 
 static void usage(const char *name) {
   printf("Group Scholar Cohort Health Sentinel\n\n");
-  printf("Usage: %s --input <file> [--json <file>] [--as-of YYYY-MM-DD] [--limit N]\n\n", name);
+  printf("Usage: %s --input <file> [--json <file>] [--as-of YYYY-MM-DD] [--limit N]\n", name);
+  printf("          [--alert-threshold PCT] [--min-cohort-size N]\n\n");
   printf("Options:\n");
   printf("  --input   CSV file with scholar engagement data\n");
   printf("  --json    Write JSON output to file\n");
   printf("  --as-of   Reference date for recency calculations\n");
   printf("  --limit   Limit number of risk entries shown (default 10)\n");
+  printf("  --alert-threshold  High-risk share that triggers cohort alert (default 0.30)\n");
+  printf("  --min-cohort-size  Minimum cohort size for alerts (default 5)\n");
 }
 
 static int find_or_add_cohort(CohortStats *cohorts, int *count, const char *name) {
@@ -151,6 +166,8 @@ int main(int argc, char **argv) {
   const char *json_path = NULL;
   const char *as_of_str = NULL;
   int limit = 10;
+  double alert_threshold = 0.30;
+  int min_cohort_size = 5;
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
@@ -161,6 +178,16 @@ int main(int argc, char **argv) {
       as_of_str = argv[++i];
     } else if (strcmp(argv[i], "--limit") == 0 && i + 1 < argc) {
       limit = atoi(argv[++i]);
+    } else if (strcmp(argv[i], "--alert-threshold") == 0 && i + 1 < argc) {
+      if (!parse_double(argv[++i], &alert_threshold)) {
+        fprintf(stderr, "Invalid --alert-threshold value.\n");
+        return 1;
+      }
+    } else if (strcmp(argv[i], "--min-cohort-size") == 0 && i + 1 < argc) {
+      if (!parse_int(argv[++i], &min_cohort_size)) {
+        fprintf(stderr, "Invalid --min-cohort-size value.\n");
+        return 1;
+      }
     } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
       usage(argv[0]);
       return 0;
@@ -171,6 +198,11 @@ int main(int argc, char **argv) {
     usage(argv[0]);
     return 1;
   }
+
+  if (limit < 0) limit = 0;
+  if (alert_threshold < 0) alert_threshold = 0;
+  if (alert_threshold > 1.0) alert_threshold = 1.0;
+  if (min_cohort_size < 1) min_cohort_size = 1;
 
   FILE *fp = fopen(input, "r");
   if (!fp) {
@@ -321,13 +353,15 @@ int main(int argc, char **argv) {
   printf("Missing IDs: %d | Missing dates: %d\n", missing_ids, missing_dates);
   printf("Risk mix: %d high | %d medium | %d low\n\n", high_count, medium_count, low_count);
 
-  printf("Top %d risk entries\n", limit);
-  printf("ID\tCohort\tScore\tDays\tTouch30\tAttend\tSatisfaction\n");
-  for (int i = 0; i < limit; i++) {
-    RiskEntry *r = &risks[i];
-    printf("%s\t%s\t%d\t%d\t%d\t%.2f\t%.2f\n",
-           r->id, r->cohort, r->risk_score, r->days_since, r->touchpoints_30d,
-           r->attendance_rate, r->satisfaction_score);
+  if (limit > 0) {
+    printf("Top %d risk entries\n", limit);
+    printf("ID\tCohort\tScore\tDays\tTouch30\tAttend\tSatisfaction\n");
+    for (int i = 0; i < limit; i++) {
+      RiskEntry *r = &risks[i];
+      printf("%s\t%s\t%d\t%d\t%d\t%.2f\t%.2f\n",
+             r->id, r->cohort, r->risk_score, r->days_since, r->touchpoints_30d,
+             r->attendance_rate, r->satisfaction_score);
+    }
   }
 
   printf("\nCohort summary\n");
@@ -343,6 +377,44 @@ int main(int argc, char **argv) {
            avg_touch, avg_att, avg_sat, avg_days);
   }
 
+  CohortAlert alerts[200];
+  int alert_count = 0;
+  for (int i = 0; i < cohort_count; i++) {
+    CohortStats *c = &cohorts[i];
+    if (c->count < min_cohort_size) continue;
+    double high_ratio = c->count ? (double)c->high / c->count : 0;
+    if (high_ratio < alert_threshold) continue;
+    double avg_att = c->count ? c->attendance_sum / c->count : 0;
+    double avg_sat = c->count ? c->satisfaction_sum / c->count : 0;
+    double avg_days = c->count ? c->days_since_sum / c->count : 0;
+    CohortAlert alert;
+    memset(&alert, 0, sizeof(CohortAlert));
+    snprintf(alert.cohort, MAX_NAME, "%s", c->name);
+    alert.count = c->count;
+    alert.high = c->high;
+    alert.medium = c->medium;
+    alert.low = c->low;
+    alert.high_ratio = high_ratio;
+    alert.avg_days = avg_days;
+    alert.avg_attendance = avg_att;
+    alert.avg_satisfaction = avg_sat;
+    alerts[alert_count++] = alert;
+  }
+
+  if (alert_count > 0) {
+    printf("\nCohort alerts (high-risk share >= %.2f, min size %d)\n", alert_threshold, min_cohort_size);
+    printf("Cohort\tHighShare\tCount\tHigh\tMedium\tLow\tAvgDays\tAvgAttend\tAvgSatisfaction\n");
+    for (int i = 0; i < alert_count; i++) {
+      CohortAlert *a = &alerts[i];
+      printf("%s\t%.2f\t%d\t%d\t%d\t%d\t%.1f\t%.2f\t%.2f\n",
+             a->cohort, a->high_ratio, a->count, a->high, a->medium, a->low,
+             a->avg_days, a->avg_attendance, a->avg_satisfaction);
+    }
+  } else {
+    printf("\nCohort alerts (high-risk share >= %.2f, min size %d)\n", alert_threshold, min_cohort_size);
+    printf("None\n");
+  }
+
   if (json_path) {
     FILE *jf = fopen(json_path, "w");
     if (!jf) {
@@ -355,6 +427,8 @@ int main(int argc, char **argv) {
       fprintf(jf, "  \"missing\": {\"ids\": %d, \"dates\": %d},\n", missing_ids, missing_dates);
       fprintf(jf, "  \"risk_mix\": {\"high\": %d, \"medium\": %d, \"low\": %d},\n",
               high_count, medium_count, low_count);
+      fprintf(jf, "  \"alert_threshold\": %.2f,\n", alert_threshold);
+      fprintf(jf, "  \"min_cohort_size\": %d,\n", min_cohort_size);
       fprintf(jf, "  \"top_risks\": [\n");
       for (int i = 0; i < limit; i++) {
         RiskEntry *r = &risks[i];
@@ -375,6 +449,15 @@ int main(int argc, char **argv) {
                 c->name, c->count, c->high, c->medium, c->low,
                 avg_touch, avg_att, avg_sat, avg_days,
                 (i == cohort_count - 1) ? "" : ",");
+      }
+      fprintf(jf, "  ],\n");
+      fprintf(jf, "  \"alerts\": [\n");
+      for (int i = 0; i < alert_count; i++) {
+        CohortAlert *a = &alerts[i];
+        fprintf(jf, "    {\"cohort\": \"%s\", \"high_share\": %.2f, \"count\": %d, \"high\": %d, \"medium\": %d, \"low\": %d, \"avg_days_since\": %.1f, \"avg_attendance\": %.2f, \"avg_satisfaction\": %.2f}%s\n",
+                a->cohort, a->high_ratio, a->count, a->high, a->medium, a->low,
+                a->avg_days, a->avg_attendance, a->avg_satisfaction,
+                (i == alert_count - 1) ? "" : ",");
       }
       fprintf(jf, "  ]\n");
       fprintf(jf, "}\n");
