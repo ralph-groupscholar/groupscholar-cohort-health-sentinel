@@ -53,12 +53,13 @@ typedef struct {
 } CohortAlert;
 
 static void trim(char *s) {
-  char *end;
-  while (isspace((unsigned char)*s)) s++;
-  if (*s == 0) return;
-  end = s + strlen(s) - 1;
-  while (end > s && isspace((unsigned char)*end)) end--;
-  *(end + 1) = '\0';
+  char *start = s;
+  while (isspace((unsigned char)*start)) start++;
+  if (start != s) memmove(s, start, strlen(start) + 1);
+  if (*s == '\0') return;
+  char *end = s + strlen(s);
+  while (end > s && isspace((unsigned char)*(end - 1))) end--;
+  *end = '\0';
 }
 
 static int parse_int(const char *s, int *out) {
@@ -122,10 +123,18 @@ static const char *risk_label(int score) {
   return "low";
 }
 
+static int matches_cohort(const char *cohort, char **filters, int filter_count) {
+  if (filter_count == 0) return 1;
+  for (int i = 0; i < filter_count; i++) {
+    if (strcmp(cohort, filters[i]) == 0) return 1;
+  }
+  return 0;
+}
+
 static void usage(const char *name) {
   printf("Group Scholar Cohort Health Sentinel\n\n");
   printf("Usage: %s --input <file> [--json <file>] [--as-of YYYY-MM-DD] [--limit N]\n", name);
-  printf("          [--alert-threshold PCT] [--min-cohort-size N]\n\n");
+  printf("          [--alert-threshold PCT] [--min-cohort-size N] [--cohort NAME[,NAME]]\n\n");
   printf("Options:\n");
   printf("  --input   CSV file with scholar engagement data\n");
   printf("  --json    Write JSON output to file\n");
@@ -133,6 +142,7 @@ static void usage(const char *name) {
   printf("  --limit   Limit number of risk entries shown (default 10)\n");
   printf("  --alert-threshold  High-risk share that triggers cohort alert (default 0.30)\n");
   printf("  --min-cohort-size  Minimum cohort size for alerts (default 5)\n");
+  printf("  --cohort  Filter results to one or more cohorts (comma-separated)\n");
 }
 
 static int find_or_add_cohort(CohortStats *cohorts, int *count, const char *name) {
@@ -165,9 +175,13 @@ int main(int argc, char **argv) {
   const char *input = NULL;
   const char *json_path = NULL;
   const char *as_of_str = NULL;
+  const char *cohort_filter = NULL;
   int limit = 10;
   double alert_threshold = 0.30;
   int min_cohort_size = 5;
+  char *cohort_filter_buffer = NULL;
+  char **cohort_filters = NULL;
+  int cohort_filter_count = 0;
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--input") == 0 && i + 1 < argc) {
@@ -176,6 +190,8 @@ int main(int argc, char **argv) {
       json_path = argv[++i];
     } else if (strcmp(argv[i], "--as-of") == 0 && i + 1 < argc) {
       as_of_str = argv[++i];
+    } else if (strcmp(argv[i], "--cohort") == 0 && i + 1 < argc) {
+      cohort_filter = argv[++i];
     } else if (strcmp(argv[i], "--limit") == 0 && i + 1 < argc) {
       limit = atoi(argv[++i]);
     } else if (strcmp(argv[i], "--alert-threshold") == 0 && i + 1 < argc) {
@@ -199,6 +215,44 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  if (cohort_filter) {
+    cohort_filter_buffer = strdup(cohort_filter);
+    if (!cohort_filter_buffer) {
+      fprintf(stderr, "Failed to allocate cohort filter buffer.\n");
+      return 1;
+    }
+    int slots = 4;
+    cohort_filters = (char **)malloc(sizeof(char *) * slots);
+    if (!cohort_filters) {
+      fprintf(stderr, "Failed to allocate cohort filters.\n");
+      free(cohort_filter_buffer);
+      return 1;
+    }
+    char *token = strtok(cohort_filter_buffer, ",");
+    while (token) {
+      trim(token);
+      if (*token) {
+        if (cohort_filter_count >= slots) {
+          slots *= 2;
+          char **resized = (char **)realloc(cohort_filters, sizeof(char *) * slots);
+          if (!resized) {
+            fprintf(stderr, "Failed to expand cohort filters.\n");
+            free(cohort_filter_buffer);
+            free(cohort_filters);
+            return 1;
+          }
+          cohort_filters = resized;
+        }
+        cohort_filters[cohort_filter_count++] = token;
+      }
+      token = strtok(NULL, ",");
+    }
+    if (cohort_filter_count == 0) {
+      free(cohort_filters);
+      cohort_filters = NULL;
+    }
+  }
+
   if (limit < 0) limit = 0;
   if (alert_threshold < 0) alert_threshold = 0;
   if (alert_threshold > 1.0) alert_threshold = 1.0;
@@ -207,6 +261,8 @@ int main(int argc, char **argv) {
   FILE *fp = fopen(input, "r");
   if (!fp) {
     perror("Failed to open input file");
+    free(cohort_filter_buffer);
+    free(cohort_filters);
     return 1;
   }
 
@@ -301,7 +357,14 @@ int main(int argc, char **argv) {
 
   for (int i = 0; i < count; i++) {
     Scholar *s = &scholars[i];
-    if (!s->valid) continue;
+    if (!s->valid) {
+      invalid_rows++;
+      continue;
+    }
+
+    if (!matches_cohort(s->cohort, cohort_filters, cohort_filter_count)) {
+      continue;
+    }
 
     struct tm touch_tm;
     if (!parse_date(s->last_touchpoint, &touch_tm)) {
@@ -349,7 +412,7 @@ int main(int argc, char **argv) {
 
   printf("Group Scholar Cohort Health Sentinel\n");
   printf("Reference date: %s\n", as_of_str ? as_of_str : "today");
-  printf("Records: %d valid, %d invalid\n", valid_count, invalid_rows + (count - valid_count));
+  printf("Records: %d valid, %d invalid\n", valid_count, invalid_rows);
   printf("Missing IDs: %d | Missing dates: %d\n", missing_ids, missing_dates);
   printf("Risk mix: %d high | %d medium | %d low\n\n", high_count, medium_count, low_count);
 
@@ -423,7 +486,14 @@ int main(int argc, char **argv) {
       fprintf(jf, "{\n");
       fprintf(jf, "  \"reference_date\": \"%s\",\n", as_of_str ? as_of_str : "today");
       fprintf(jf, "  \"records\": {\"valid\": %d, \"invalid\": %d},\n",
-              valid_count, invalid_rows + (count - valid_count));
+              valid_count, invalid_rows);
+      if (cohort_filter_count > 0) {
+        fprintf(jf, "  \"cohort_filter\": [");
+        for (int i = 0; i < cohort_filter_count; i++) {
+          fprintf(jf, "\"%s\"%s", cohort_filters[i], (i == cohort_filter_count - 1) ? "" : ", ");
+        }
+        fprintf(jf, "],\n");
+      }
       fprintf(jf, "  \"missing\": {\"ids\": %d, \"dates\": %d},\n", missing_ids, missing_dates);
       fprintf(jf, "  \"risk_mix\": {\"high\": %d, \"medium\": %d, \"low\": %d},\n",
               high_count, medium_count, low_count);
@@ -467,6 +537,8 @@ int main(int argc, char **argv) {
 
   free(risks);
   free(scholars);
+  free(cohort_filter_buffer);
+  free(cohort_filters);
 
   return 0;
 }
