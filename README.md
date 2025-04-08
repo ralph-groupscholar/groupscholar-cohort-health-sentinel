@@ -8,6 +8,7 @@ Group Scholar Cohort Health Sentinel is a lightweight C CLI that audits cohort e
 - Cohort summary table with average health signals
 - Cohort alerting based on high-risk share thresholds
 - Missing data detection for IDs and dates
+- Optional cohort filtering for focused reviews
 - Optional JSON output for downstream workflows
 
 ## Data format
@@ -29,6 +30,12 @@ cc -std=c11 -O2 -o cohort-health-sentinel src/main.c
 
 ```
 ./cohort-health-sentinel --input data/sample.csv --as-of 2026-02-01 --limit 8
+```
+
+Filter to specific cohorts:
+
+```
+./cohort-health-sentinel --input data/sample.csv --cohort "Delta,Omega" --limit 5
 ```
 
 Alert on cohorts with high-risk share >= 35% and at least 8 scholars:
