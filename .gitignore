@@ -1,0 +1,5 @@
+.DS_Store
+.venv/
+cohort-health-sentinel
+output.json
+data/sample-output.json

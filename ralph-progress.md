@@ -11,3 +11,13 @@
 - Added cohort filtering support and fixed trimming to handle leading whitespace.
 - Corrected invalid row accounting to avoid double-counting in summaries and JSON output.
 - Updated README with cohort filter usage example.
+
+## 2026-02-08
+- Added Postgres sync script to persist cohort health runs, cohort metrics, top risks, and alerts.
+- Documented database sync workflow and dependencies in the README.
+- Seeded the production database schema with a sample run from the provided CSV data.
+
+## 2026-02-08
+- Added Postgres ingestion script using SQLAlchemy with schema/table setup and report ingestion.
+- Generated sample JSON output for seeding and documented database workflow in README.
+- Added Python requirements for optional database integration.

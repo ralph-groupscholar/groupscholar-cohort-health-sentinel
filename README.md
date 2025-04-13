@@ -10,6 +10,7 @@ Group Scholar Cohort Health Sentinel is a lightweight C CLI that audits cohort e
 - Missing data detection for IDs and dates
 - Optional cohort filtering for focused reviews
 - Optional JSON output for downstream workflows
+- Optional Postgres sync for cohort health snapshots
 
 ## Data format
 CSV columns (header required):
@@ -50,6 +51,22 @@ Write JSON output:
 ./cohort-health-sentinel --input data/sample.csv --json output.json --alert-threshold 0.30
 ```
 
+Sync JSON output to Postgres:
+
+```
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r scripts/requirements.txt
+
+export PGHOST="db-acupinir.groupscholar.com"
+export PGPORT="23947"
+export PGUSER="ralph"
+export PGPASSWORD="your-password"
+export PGDATABASE="postgres"
+
+python3 scripts/db_sync.py --json output.json
+```
+
 ## Output
 The CLI prints:
 - Total valid/invalid rows
@@ -59,6 +76,41 @@ The CLI prints:
 - Cohort-level averages and risk distribution
 - Cohort alerts when high-risk share exceeds the threshold
 
+## Postgres integration
+Load JSON output into the Group Scholar Postgres database for historical tracking.
+
+Install dependencies:
+
+```
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Set environment variables (do not commit credentials):
+
+```
+export GSCH_DB_HOST=...
+export GSCH_DB_PORT=23947
+export GSCH_DB_USER=ralph
+export GSCH_DB_PASSWORD=...
+export GSCH_DB_NAME=postgres
+```
+
+Create schema and seed the production database with sample output:
+
+```
+python scripts/postgres_ingest.py --setup --seed
+```
+
+Ingest a fresh JSON report:
+
+```
+python scripts/postgres_ingest.py --ingest --json data/sample-output.json --source sample
+```
+
 ## Tech
 - C (C11)
 - Standard library only
+- Python (SQLAlchemy, psycopg2) for optional database ingestion
+- Python (Postgres sync)
