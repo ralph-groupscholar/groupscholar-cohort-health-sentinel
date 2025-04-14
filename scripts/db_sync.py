@@ -5,8 +5,7 @@ import os
 from datetime import date
 from typing import Optional
 
-import psycopg2
-from psycopg2.extras import execute_values
+import psycopg
 
 SCHEMA = "cohort_health_sentinel"
 
@@ -112,7 +111,7 @@ def main() -> None:
 
     payload = load_json(args.json)
 
-    connection = psycopg2.connect(
+    connection = psycopg.connect(
         host=require_env("PGHOST"),
         port=require_env("PGPORT"),
         user=require_env("PGUSER"),
@@ -150,12 +149,11 @@ def main() -> None:
 
                 top_risks = payload.get("top_risks", [])
                 if top_risks:
-                    execute_values(
-                        cur,
+                    cur.executemany(
                         f"""
                         INSERT INTO {SCHEMA}.top_risks
                           (run_id, scholar_id, cohort, score, days_since, touchpoints_30d, attendance_rate, satisfaction_score)
-                        VALUES %s
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         [
                             (
@@ -174,12 +172,11 @@ def main() -> None:
 
                 cohorts = payload.get("cohorts", [])
                 if cohorts:
-                    execute_values(
-                        cur,
+                    cur.executemany(
                         f"""
                         INSERT INTO {SCHEMA}.cohort_metrics
                           (run_id, cohort, count, high, medium, low, avg_touchpoints_30d, avg_attendance, avg_satisfaction, avg_days_since)
-                        VALUES %s
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         [
                             (
@@ -200,12 +197,11 @@ def main() -> None:
 
                 alerts = payload.get("alerts", [])
                 if alerts:
-                    execute_values(
-                        cur,
+                    cur.executemany(
                         f"""
                         INSERT INTO {SCHEMA}.cohort_alerts
                           (run_id, cohort, high_share, count, high, medium, low, avg_days_since, avg_attendance, avg_satisfaction)
-                        VALUES %s
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         [
                             (
