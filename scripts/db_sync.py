@@ -42,8 +42,15 @@ def ensure_schema(cur) -> None:
             valid_count INTEGER NOT NULL,
             invalid_count INTEGER NOT NULL,
             missing_ids INTEGER NOT NULL,
-            missing_dates INTEGER NOT NULL
+            missing_dates INTEGER NOT NULL,
+            future_dates INTEGER NOT NULL DEFAULT 0
         );
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE {SCHEMA}.runs
+        ADD COLUMN IF NOT EXISTS future_dates INTEGER NOT NULL DEFAULT 0;
         """
     )
     cur.execute(
@@ -127,12 +134,13 @@ def main() -> None:
                 reference_date = parse_reference_date(payload.get("reference_date", ""))
                 records = payload.get("records", {})
                 missing = payload.get("missing", {})
+                date_anomalies = payload.get("date_anomalies", {})
 
                 cur.execute(
                     f"""
                     INSERT INTO {SCHEMA}.runs
-                      (reference_date, alert_threshold, min_cohort_size, valid_count, invalid_count, missing_ids, missing_dates)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                      (reference_date, alert_threshold, min_cohort_size, valid_count, invalid_count, missing_ids, missing_dates, future_dates)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id;
                     """,
                     (
@@ -143,6 +151,7 @@ def main() -> None:
                         records.get("invalid", 0),
                         missing.get("ids", 0),
                         missing.get("dates", 0),
+                        date_anomalies.get("future_dates", 0),
                     ),
                 )
                 run_id = cur.fetchone()[0]

@@ -71,6 +71,7 @@ python3 scripts/db_sync.py --json output.json
 The CLI prints:
 - Total valid/invalid rows
 - Missing ID/date counts
+- Future-dated touchpoints (clamped to 0 days since)
 - Risk mix (high/medium/low)
 - Top risk entries
 - Cohort-level averages and risk distribution

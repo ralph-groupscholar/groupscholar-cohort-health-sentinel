@@ -21,3 +21,7 @@
 - Added Postgres ingestion script using SQLAlchemy with schema/table setup and report ingestion.
 - Generated sample JSON output for seeding and documented database workflow in README.
 - Added Python requirements for optional database integration.
+
+## 2026-02-08
+- Added future-date detection to clamp negative recency and surface future touchpoints in CLI/JSON output.
+- Extended Postgres ingestion scripts to capture future-date counts in stored reports.

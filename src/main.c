@@ -290,6 +290,7 @@ int main(int argc, char **argv) {
   int missing_dates = 0;
   int missing_ids = 0;
   int invalid_rows = 0;
+  int future_dates = 0;
 
   while (fgets(line, sizeof(line), fp)) {
     line_num++;
@@ -374,6 +375,10 @@ int main(int argc, char **argv) {
 
     time_t touch_time = to_time_utc(touch_tm);
     int days_since = days_between(as_of_time, touch_time);
+    if (days_since < 0) {
+      future_dates++;
+      days_since = 0;
+    }
     int score = risk_score_for(days_since, s->touchpoints_30d, s->attendance_rate, s->satisfaction_score);
 
     const char *label = risk_label(score);
@@ -413,7 +418,7 @@ int main(int argc, char **argv) {
   printf("Group Scholar Cohort Health Sentinel\n");
   printf("Reference date: %s\n", as_of_str ? as_of_str : "today");
   printf("Records: %d valid, %d invalid\n", valid_count, invalid_rows);
-  printf("Missing IDs: %d | Missing dates: %d\n", missing_ids, missing_dates);
+  printf("Missing IDs: %d | Missing dates: %d | Future dates: %d\n", missing_ids, missing_dates, future_dates);
   printf("Risk mix: %d high | %d medium | %d low\n\n", high_count, medium_count, low_count);
 
   if (limit > 0) {
@@ -495,6 +500,7 @@ int main(int argc, char **argv) {
         fprintf(jf, "],\n");
       }
       fprintf(jf, "  \"missing\": {\"ids\": %d, \"dates\": %d},\n", missing_ids, missing_dates);
+      fprintf(jf, "  \"date_anomalies\": {\"future_dates\": %d},\n", future_dates);
       fprintf(jf, "  \"risk_mix\": {\"high\": %d, \"medium\": %d, \"low\": %d},\n",
               high_count, medium_count, low_count);
       fprintf(jf, "  \"alert_threshold\": %.2f,\n", alert_threshold);
