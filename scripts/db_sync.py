@@ -78,6 +78,7 @@ def ensure_schema(cur) -> None:
             high INTEGER NOT NULL,
             medium INTEGER NOT NULL,
             low INTEGER NOT NULL,
+            risk_index NUMERIC(6, 3) NOT NULL DEFAULT 0,
             avg_touchpoints_30d NUMERIC(6, 3) NOT NULL,
             avg_attendance NUMERIC(6, 3) NOT NULL,
             avg_satisfaction NUMERIC(6, 3) NOT NULL,
@@ -87,11 +88,18 @@ def ensure_schema(cur) -> None:
     )
     cur.execute(
         f"""
+        ALTER TABLE {SCHEMA}.cohort_metrics
+        ADD COLUMN IF NOT EXISTS risk_index NUMERIC(6, 3) NOT NULL DEFAULT 0;
+        """
+    )
+    cur.execute(
+        f"""
         CREATE TABLE IF NOT EXISTS {SCHEMA}.cohort_alerts (
             id SERIAL PRIMARY KEY,
             run_id INTEGER NOT NULL REFERENCES {SCHEMA}.runs(id) ON DELETE CASCADE,
             cohort TEXT NOT NULL,
             high_share NUMERIC(6, 3) NOT NULL,
+            risk_index NUMERIC(6, 3) NOT NULL DEFAULT 0,
             count INTEGER NOT NULL,
             high INTEGER NOT NULL,
             medium INTEGER NOT NULL,
@@ -100,6 +108,12 @@ def ensure_schema(cur) -> None:
             avg_attendance NUMERIC(6, 3) NOT NULL,
             avg_satisfaction NUMERIC(6, 3) NOT NULL
         );
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE {SCHEMA}.cohort_alerts
+        ADD COLUMN IF NOT EXISTS risk_index NUMERIC(6, 3) NOT NULL DEFAULT 0;
         """
     )
 
@@ -184,8 +198,8 @@ def main() -> None:
                     cur.executemany(
                         f"""
                         INSERT INTO {SCHEMA}.cohort_metrics
-                          (run_id, cohort, count, high, medium, low, avg_touchpoints_30d, avg_attendance, avg_satisfaction, avg_days_since)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                          (run_id, cohort, count, high, medium, low, risk_index, avg_touchpoints_30d, avg_attendance, avg_satisfaction, avg_days_since)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         [
                             (
@@ -195,6 +209,7 @@ def main() -> None:
                                 item.get("high", 0),
                                 item.get("medium", 0),
                                 item.get("low", 0),
+                                item.get("risk_index", 0),
                                 item.get("avg_touchpoints_30d", 0),
                                 item.get("avg_attendance", 0),
                                 item.get("avg_satisfaction", 0),
@@ -209,14 +224,15 @@ def main() -> None:
                     cur.executemany(
                         f"""
                         INSERT INTO {SCHEMA}.cohort_alerts
-                          (run_id, cohort, high_share, count, high, medium, low, avg_days_since, avg_attendance, avg_satisfaction)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                          (run_id, cohort, high_share, risk_index, count, high, medium, low, avg_days_since, avg_attendance, avg_satisfaction)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         [
                             (
                                 run_id,
                                 item.get("cohort", ""),
                                 item.get("high_share", 0),
+                                item.get("risk_index", 0),
                                 item.get("count", 0),
                                 item.get("high", 0),
                                 item.get("medium", 0),

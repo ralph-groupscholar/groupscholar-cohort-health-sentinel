@@ -6,6 +6,7 @@ Group Scholar Cohort Health Sentinel is a lightweight C CLI that audits cohort e
 - Risk scoring based on recency, touchpoints, attendance, and satisfaction
 - Top risk list with configurable limit
 - Cohort summary table with average health signals
+- Cohort risk index (1-3) based on risk mix weighting
 - Cohort alerting based on high-risk share thresholds
 - Missing data detection for IDs and dates
 - Optional cohort filtering for focused reviews
@@ -74,7 +75,7 @@ The CLI prints:
 - Future-dated touchpoints (clamped to 0 days since)
 - Risk mix (high/medium/low)
 - Top risk entries
-- Cohort-level averages and risk distribution
+- Cohort-level averages, risk distribution, and risk index
 - Cohort alerts when high-risk share exceeds the threshold
 
 ## Postgres integration

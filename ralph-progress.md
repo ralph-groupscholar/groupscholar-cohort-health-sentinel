@@ -25,3 +25,8 @@
 ## 2026-02-08
 - Added future-date detection to clamp negative recency and surface future touchpoints in CLI/JSON output.
 - Extended Postgres ingestion scripts to capture future-date counts in stored reports.
+
+## 2026-02-08
+- Added cohort risk index calculations to the CLI output and JSON export.
+- Extended Postgres sync/ingest schemas to store cohort and alert risk index values.
+- Documented the risk index output in the README.

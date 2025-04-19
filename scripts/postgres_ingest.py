@@ -83,6 +83,7 @@ def setup_schema(conn, schema):
             high INT NOT NULL,
             medium INT NOT NULL,
             low INT NOT NULL,
+            risk_index NUMERIC(6,2) NOT NULL DEFAULT 0,
             avg_touchpoints_30d NUMERIC(6,2) NOT NULL,
             avg_attendance NUMERIC(5,2) NOT NULL,
             avg_satisfaction NUMERIC(5,2) NOT NULL,
@@ -90,10 +91,15 @@ def setup_schema(conn, schema):
         )
     """))
     conn.execute(text(f"""
+        ALTER TABLE {schema}.cohort_summaries
+        ADD COLUMN IF NOT EXISTS risk_index NUMERIC(6,2) NOT NULL DEFAULT 0
+    """))
+    conn.execute(text(f"""
         CREATE TABLE IF NOT EXISTS {schema}.alerts (
             report_id UUID NOT NULL REFERENCES {schema}.reports(report_id) ON DELETE CASCADE,
             cohort TEXT NOT NULL,
             high_share NUMERIC(5,2) NOT NULL,
+            risk_index NUMERIC(6,2) NOT NULL DEFAULT 0,
             count INT NOT NULL,
             high INT NOT NULL,
             medium INT NOT NULL,
@@ -102,6 +108,10 @@ def setup_schema(conn, schema):
             avg_attendance NUMERIC(5,2) NOT NULL,
             avg_satisfaction NUMERIC(5,2) NOT NULL
         )
+    """))
+    conn.execute(text(f"""
+        ALTER TABLE {schema}.alerts
+        ADD COLUMN IF NOT EXISTS risk_index NUMERIC(6,2) NOT NULL DEFAULT 0
     """))
     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_reports_created_at ON {schema}.reports(created_at)"))
     conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_top_risks_report ON {schema}.top_risks(report_id)"))
@@ -184,11 +194,11 @@ def ingest_report(conn, schema, report, source_label):
         conn.execute(
             text(f"""
                 INSERT INTO {schema}.cohort_summaries (
-                    report_id, cohort, count, high, medium, low,
+                    report_id, cohort, count, high, medium, low, risk_index,
                     avg_touchpoints_30d, avg_attendance, avg_satisfaction, avg_days_since
                 )
                 VALUES (
-                    :report_id, :cohort, :count, :high, :medium, :low,
+                    :report_id, :cohort, :count, :high, :medium, :low, :risk_index,
                     :avg_touchpoints_30d, :avg_attendance, :avg_satisfaction, :avg_days_since
                 )
             """),
@@ -200,6 +210,7 @@ def ingest_report(conn, schema, report, source_label):
                     "high": entry.get("high"),
                     "medium": entry.get("medium"),
                     "low": entry.get("low"),
+                    "risk_index": entry.get("risk_index", 0),
                     "avg_touchpoints_30d": entry.get("avg_touchpoints_30d"),
                     "avg_attendance": entry.get("avg_attendance"),
                     "avg_satisfaction": entry.get("avg_satisfaction"),
@@ -214,11 +225,11 @@ def ingest_report(conn, schema, report, source_label):
         conn.execute(
             text(f"""
                 INSERT INTO {schema}.alerts (
-                    report_id, cohort, high_share, count, high, medium, low,
+                    report_id, cohort, high_share, risk_index, count, high, medium, low,
                     avg_days_since, avg_attendance, avg_satisfaction
                 )
                 VALUES (
-                    :report_id, :cohort, :high_share, :count, :high, :medium, :low,
+                    :report_id, :cohort, :high_share, :risk_index, :count, :high, :medium, :low,
                     :avg_days_since, :avg_attendance, :avg_satisfaction
                 )
             """),
@@ -227,6 +238,7 @@ def ingest_report(conn, schema, report, source_label):
                     "report_id": report_id,
                     "cohort": entry.get("cohort"),
                     "high_share": entry.get("high_share"),
+                    "risk_index": entry.get("risk_index", 0),
                     "count": entry.get("count"),
                     "high": entry.get("high"),
                     "medium": entry.get("medium"),

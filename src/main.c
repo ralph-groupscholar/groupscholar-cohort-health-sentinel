@@ -47,6 +47,7 @@ typedef struct {
   int medium;
   int low;
   double high_ratio;
+  double risk_index;
   double avg_days;
   double avg_attendance;
   double avg_satisfaction;
@@ -121,6 +122,12 @@ static const char *risk_label(int score) {
   if (score >= 6) return "high";
   if (score >= 3) return "medium";
   return "low";
+}
+
+static double cohort_risk_index(int high, int medium, int low) {
+  int count = high + medium + low;
+  if (count == 0) return 0.0;
+  return (high * 3.0 + medium * 2.0 + low * 1.0) / (double)count;
 }
 
 static int matches_cohort(const char *cohort, char **filters, int filter_count) {
@@ -433,16 +440,17 @@ int main(int argc, char **argv) {
   }
 
   printf("\nCohort summary\n");
-  printf("Cohort\tCount\tHigh\tMedium\tLow\tAvgTouch30\tAvgAttend\tAvgSatisfaction\tAvgDaysSince\n");
+  printf("Cohort\tCount\tHigh\tMedium\tLow\tRiskIndex\tAvgTouch30\tAvgAttend\tAvgSatisfaction\tAvgDaysSince\n");
   for (int i = 0; i < cohort_count; i++) {
     CohortStats *c = &cohorts[i];
     double avg_touch = c->count ? (double)c->touchpoints_sum / c->count : 0;
     double avg_att = c->count ? c->attendance_sum / c->count : 0;
     double avg_sat = c->count ? c->satisfaction_sum / c->count : 0;
     double avg_days = c->count ? c->days_since_sum / c->count : 0;
-    printf("%s\t%d\t%d\t%d\t%d\t%.2f\t%.2f\t%.2f\t%.1f\n",
+    double risk_index = cohort_risk_index(c->high, c->medium, c->low);
+    printf("%s\t%d\t%d\t%d\t%d\t%.2f\t%.2f\t%.2f\t%.2f\t%.1f\n",
            c->name, c->count, c->high, c->medium, c->low,
-           avg_touch, avg_att, avg_sat, avg_days);
+           risk_index, avg_touch, avg_att, avg_sat, avg_days);
   }
 
   CohortAlert alerts[200];
@@ -463,6 +471,7 @@ int main(int argc, char **argv) {
     alert.medium = c->medium;
     alert.low = c->low;
     alert.high_ratio = high_ratio;
+    alert.risk_index = cohort_risk_index(c->high, c->medium, c->low);
     alert.avg_days = avg_days;
     alert.avg_attendance = avg_att;
     alert.avg_satisfaction = avg_sat;
@@ -471,11 +480,11 @@ int main(int argc, char **argv) {
 
   if (alert_count > 0) {
     printf("\nCohort alerts (high-risk share >= %.2f, min size %d)\n", alert_threshold, min_cohort_size);
-    printf("Cohort\tHighShare\tCount\tHigh\tMedium\tLow\tAvgDays\tAvgAttend\tAvgSatisfaction\n");
+    printf("Cohort\tHighShare\tRiskIndex\tCount\tHigh\tMedium\tLow\tAvgDays\tAvgAttend\tAvgSatisfaction\n");
     for (int i = 0; i < alert_count; i++) {
       CohortAlert *a = &alerts[i];
-      printf("%s\t%.2f\t%d\t%d\t%d\t%d\t%.1f\t%.2f\t%.2f\n",
-             a->cohort, a->high_ratio, a->count, a->high, a->medium, a->low,
+      printf("%s\t%.2f\t%.2f\t%d\t%d\t%d\t%d\t%.1f\t%.2f\t%.2f\n",
+             a->cohort, a->high_ratio, a->risk_index, a->count, a->high, a->medium, a->low,
              a->avg_days, a->avg_attendance, a->avg_satisfaction);
     }
   } else {
@@ -521,17 +530,18 @@ int main(int argc, char **argv) {
         double avg_att = c->count ? c->attendance_sum / c->count : 0;
         double avg_sat = c->count ? c->satisfaction_sum / c->count : 0;
         double avg_days = c->count ? c->days_since_sum / c->count : 0;
-        fprintf(jf, "    {\"cohort\": \"%s\", \"count\": %d, \"high\": %d, \"medium\": %d, \"low\": %d, \"avg_touchpoints_30d\": %.2f, \"avg_attendance\": %.2f, \"avg_satisfaction\": %.2f, \"avg_days_since\": %.1f}%s\n",
+        double risk_index = cohort_risk_index(c->high, c->medium, c->low);
+        fprintf(jf, "    {\"cohort\": \"%s\", \"count\": %d, \"high\": %d, \"medium\": %d, \"low\": %d, \"risk_index\": %.2f, \"avg_touchpoints_30d\": %.2f, \"avg_attendance\": %.2f, \"avg_satisfaction\": %.2f, \"avg_days_since\": %.1f}%s\n",
                 c->name, c->count, c->high, c->medium, c->low,
-                avg_touch, avg_att, avg_sat, avg_days,
+                risk_index, avg_touch, avg_att, avg_sat, avg_days,
                 (i == cohort_count - 1) ? "" : ",");
       }
       fprintf(jf, "  ],\n");
       fprintf(jf, "  \"alerts\": [\n");
       for (int i = 0; i < alert_count; i++) {
         CohortAlert *a = &alerts[i];
-        fprintf(jf, "    {\"cohort\": \"%s\", \"high_share\": %.2f, \"count\": %d, \"high\": %d, \"medium\": %d, \"low\": %d, \"avg_days_since\": %.1f, \"avg_attendance\": %.2f, \"avg_satisfaction\": %.2f}%s\n",
-                a->cohort, a->high_ratio, a->count, a->high, a->medium, a->low,
+        fprintf(jf, "    {\"cohort\": \"%s\", \"high_share\": %.2f, \"risk_index\": %.2f, \"count\": %d, \"high\": %d, \"medium\": %d, \"low\": %d, \"avg_days_since\": %.1f, \"avg_attendance\": %.2f, \"avg_satisfaction\": %.2f}%s\n",
+                a->cohort, a->high_ratio, a->risk_index, a->count, a->high, a->medium, a->low,
                 a->avg_days, a->avg_attendance, a->avg_satisfaction,
                 (i == alert_count - 1) ? "" : ",");
       }
