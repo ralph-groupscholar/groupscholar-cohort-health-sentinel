@@ -30,3 +30,8 @@
 - Added cohort risk index calculations to the CLI output and JSON export.
 - Extended Postgres sync/ingest schemas to store cohort and alert risk index values.
 - Documented the risk index output in the README.
+
+## 2026-02-08
+- Added cohort summary sorting/limiting with high-risk share metrics in CLI and JSON output.
+- Introduced alert sorting plus cohort metadata in JSON payload.
+- Added smoke tests and updated README usage/testing notes.

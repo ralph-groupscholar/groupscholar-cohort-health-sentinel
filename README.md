@@ -10,6 +10,7 @@ Group Scholar Cohort Health Sentinel is a lightweight C CLI that audits cohort e
 - Cohort alerting based on high-risk share thresholds
 - Missing data detection for IDs and dates
 - Optional cohort filtering for focused reviews
+- Cohort summary sorting and limiting for triage-ready dashboards
 - Optional JSON output for downstream workflows
 - Optional Postgres sync for cohort health snapshots
 
@@ -46,6 +47,12 @@ Alert on cohorts with high-risk share >= 35% and at least 8 scholars:
 ./cohort-health-sentinel --input data/sample.csv --alert-threshold 0.35 --min-cohort-size 8
 ```
 
+Sort cohorts by high-risk share and show only the top 5:
+
+```
+./cohort-health-sentinel --input data/sample.csv --cohort-sort high --cohort-limit 5
+```
+
 Write JSON output:
 
 ```
@@ -75,7 +82,7 @@ The CLI prints:
 - Future-dated touchpoints (clamped to 0 days since)
 - Risk mix (high/medium/low)
 - Top risk entries
-- Cohort-level averages, risk distribution, and risk index
+- Cohort-level averages, risk distribution, high-risk share, and risk index (sorted and optionally limited)
 - Cohort alerts when high-risk share exceeds the threshold
 
 ## Postgres integration
@@ -86,7 +93,7 @@ Install dependencies:
 ```
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r scripts/requirements.txt
 ```
 
 Set environment variables (do not commit credentials):
@@ -109,6 +116,13 @@ Ingest a fresh JSON report:
 
 ```
 python scripts/postgres_ingest.py --ingest --json data/sample-output.json --source sample
+```
+
+## Tests
+Run the smoke test script:
+
+```
+tests/run.sh
 ```
 
 ## Tech

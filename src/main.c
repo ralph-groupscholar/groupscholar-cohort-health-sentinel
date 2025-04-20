@@ -53,6 +53,28 @@ typedef struct {
   double avg_satisfaction;
 } CohortAlert;
 
+typedef struct {
+  char cohort[MAX_NAME];
+  int count;
+  int high;
+  int medium;
+  int low;
+  double high_share;
+  double risk_index;
+  double avg_touchpoints;
+  double avg_attendance;
+  double avg_satisfaction;
+  double avg_days;
+} CohortSummary;
+
+typedef enum {
+  SORT_RISK,
+  SORT_HIGH,
+  SORT_NAME
+} CohortSort;
+
+static CohortSort g_cohort_sort = SORT_RISK;
+
 static void trim(char *s) {
   char *start = s;
   while (isspace((unsigned char)*start)) start++;
@@ -130,6 +152,23 @@ static double cohort_risk_index(int high, int medium, int low) {
   return (high * 3.0 + medium * 2.0 + low * 1.0) / (double)count;
 }
 
+static CohortSort cohort_sort_mode(const char *value, int *ok) {
+  if (strcmp(value, "risk") == 0) {
+    *ok = 1;
+    return SORT_RISK;
+  }
+  if (strcmp(value, "high") == 0) {
+    *ok = 1;
+    return SORT_HIGH;
+  }
+  if (strcmp(value, "name") == 0) {
+    *ok = 1;
+    return SORT_NAME;
+  }
+  *ok = 0;
+  return SORT_RISK;
+}
+
 static int matches_cohort(const char *cohort, char **filters, int filter_count) {
   if (filter_count == 0) return 1;
   for (int i = 0; i < filter_count; i++) {
@@ -141,12 +180,15 @@ static int matches_cohort(const char *cohort, char **filters, int filter_count) 
 static void usage(const char *name) {
   printf("Group Scholar Cohort Health Sentinel\n\n");
   printf("Usage: %s --input <file> [--json <file>] [--as-of YYYY-MM-DD] [--limit N]\n", name);
-  printf("          [--alert-threshold PCT] [--min-cohort-size N] [--cohort NAME[,NAME]]\n\n");
+  printf("          [--alert-threshold PCT] [--min-cohort-size N] [--cohort NAME[,NAME]]\n");
+  printf("          [--cohort-sort risk|high|name] [--cohort-limit N]\n\n");
   printf("Options:\n");
   printf("  --input   CSV file with scholar engagement data\n");
   printf("  --json    Write JSON output to file\n");
   printf("  --as-of   Reference date for recency calculations\n");
   printf("  --limit   Limit number of risk entries shown (default 10)\n");
+  printf("  --cohort-sort   Sort cohort summary by risk, high, or name (default risk)\n");
+  printf("  --cohort-limit  Limit number of cohorts shown in summary\n");
   printf("  --alert-threshold  High-risk share that triggers cohort alert (default 0.30)\n");
   printf("  --min-cohort-size  Minimum cohort size for alerts (default 5)\n");
   printf("  --cohort  Filter results to one or more cohorts (comma-separated)\n");
@@ -178,12 +220,44 @@ static int compare_risk(const void *a, const void *b) {
   return strcmp(ra->id, rb->id);
 }
 
+static int compare_cohort_summary(const void *a, const void *b) {
+  const CohortSummary *ca = (const CohortSummary *)a;
+  const CohortSummary *cb = (const CohortSummary *)b;
+  if (g_cohort_sort == SORT_NAME) {
+    return strcmp(ca->cohort, cb->cohort);
+  }
+  if (g_cohort_sort == SORT_HIGH) {
+    if (cb->high_share > ca->high_share) return 1;
+    if (cb->high_share < ca->high_share) return -1;
+    if (cb->risk_index > ca->risk_index) return 1;
+    if (cb->risk_index < ca->risk_index) return -1;
+    return strcmp(ca->cohort, cb->cohort);
+  }
+  if (cb->risk_index > ca->risk_index) return 1;
+  if (cb->risk_index < ca->risk_index) return -1;
+  if (cb->high_share > ca->high_share) return 1;
+  if (cb->high_share < ca->high_share) return -1;
+  return strcmp(ca->cohort, cb->cohort);
+}
+
+static int compare_alerts(const void *a, const void *b) {
+  const CohortAlert *ca = (const CohortAlert *)a;
+  const CohortAlert *cb = (const CohortAlert *)b;
+  if (cb->high_ratio > ca->high_ratio) return 1;
+  if (cb->high_ratio < ca->high_ratio) return -1;
+  if (cb->risk_index > ca->risk_index) return 1;
+  if (cb->risk_index < ca->risk_index) return -1;
+  return strcmp(ca->cohort, cb->cohort);
+}
+
 int main(int argc, char **argv) {
   const char *input = NULL;
   const char *json_path = NULL;
   const char *as_of_str = NULL;
   const char *cohort_filter = NULL;
+  const char *cohort_sort = "risk";
   int limit = 10;
+  int cohort_limit = -1;
   double alert_threshold = 0.30;
   int min_cohort_size = 5;
   char *cohort_filter_buffer = NULL;
@@ -199,6 +273,13 @@ int main(int argc, char **argv) {
       as_of_str = argv[++i];
     } else if (strcmp(argv[i], "--cohort") == 0 && i + 1 < argc) {
       cohort_filter = argv[++i];
+    } else if (strcmp(argv[i], "--cohort-sort") == 0 && i + 1 < argc) {
+      cohort_sort = argv[++i];
+    } else if (strcmp(argv[i], "--cohort-limit") == 0 && i + 1 < argc) {
+      if (!parse_int(argv[++i], &cohort_limit)) {
+        fprintf(stderr, "Invalid --cohort-limit value.\n");
+        return 1;
+      }
     } else if (strcmp(argv[i], "--limit") == 0 && i + 1 < argc) {
       limit = atoi(argv[++i]);
     } else if (strcmp(argv[i], "--alert-threshold") == 0 && i + 1 < argc) {
@@ -215,6 +296,13 @@ int main(int argc, char **argv) {
       usage(argv[0]);
       return 0;
     }
+  }
+
+  int sort_ok = 0;
+  g_cohort_sort = cohort_sort_mode(cohort_sort, &sort_ok);
+  if (!sort_ok) {
+    fprintf(stderr, "Invalid --cohort-sort value. Use risk, high, or name.\n");
+    return 1;
   }
 
   if (!input) {
@@ -261,6 +349,7 @@ int main(int argc, char **argv) {
   }
 
   if (limit < 0) limit = 0;
+  if (cohort_limit < -1) cohort_limit = -1;
   if (alert_threshold < 0) alert_threshold = 0;
   if (alert_threshold > 1.0) alert_threshold = 1.0;
   if (min_cohort_size < 1) min_cohort_size = 1;
@@ -439,46 +528,76 @@ int main(int argc, char **argv) {
     }
   }
 
-  printf("\nCohort summary\n");
-  printf("Cohort\tCount\tHigh\tMedium\tLow\tRiskIndex\tAvgTouch30\tAvgAttend\tAvgSatisfaction\tAvgDaysSince\n");
+  CohortSummary *summaries = (CohortSummary *)malloc(sizeof(CohortSummary) * cohort_count);
   for (int i = 0; i < cohort_count; i++) {
     CohortStats *c = &cohorts[i];
     double avg_touch = c->count ? (double)c->touchpoints_sum / c->count : 0;
     double avg_att = c->count ? c->attendance_sum / c->count : 0;
     double avg_sat = c->count ? c->satisfaction_sum / c->count : 0;
     double avg_days = c->count ? c->days_since_sum / c->count : 0;
+    double high_share = c->count ? (double)c->high / c->count : 0;
     double risk_index = cohort_risk_index(c->high, c->medium, c->low);
-    printf("%s\t%d\t%d\t%d\t%d\t%.2f\t%.2f\t%.2f\t%.2f\t%.1f\n",
-           c->name, c->count, c->high, c->medium, c->low,
-           risk_index, avg_touch, avg_att, avg_sat, avg_days);
+    CohortSummary summary;
+    memset(&summary, 0, sizeof(CohortSummary));
+    snprintf(summary.cohort, MAX_NAME, "%s", c->name);
+    summary.count = c->count;
+    summary.high = c->high;
+    summary.medium = c->medium;
+    summary.low = c->low;
+    summary.high_share = high_share;
+    summary.risk_index = risk_index;
+    summary.avg_touchpoints = avg_touch;
+    summary.avg_attendance = avg_att;
+    summary.avg_satisfaction = avg_sat;
+    summary.avg_days = avg_days;
+    summaries[i] = summary;
+  }
+
+  if (cohort_count > 1) {
+    qsort(summaries, cohort_count, sizeof(CohortSummary), compare_cohort_summary);
+  }
+
+  int cohort_display = cohort_count;
+  if (cohort_limit >= 0 && cohort_limit < cohort_display) {
+    cohort_display = cohort_limit;
+  }
+
+  printf("\nCohort summary (sorted by %s)\n", cohort_sort);
+  if (cohort_display == 0) {
+    printf("None\n");
+  } else {
+    printf("Cohort\tCount\tHigh\tMedium\tLow\tHighShare\tRiskIndex\tAvgTouch30\tAvgAttend\tAvgSatisfaction\tAvgDaysSince\n");
+    for (int i = 0; i < cohort_display; i++) {
+      CohortSummary *c = &summaries[i];
+      printf("%s\t%d\t%d\t%d\t%d\t%.2f\t%.2f\t%.2f\t%.2f\t%.2f\t%.1f\n",
+             c->cohort, c->count, c->high, c->medium, c->low, c->high_share,
+             c->risk_index, c->avg_touchpoints, c->avg_attendance, c->avg_satisfaction, c->avg_days);
+    }
   }
 
   CohortAlert alerts[200];
   int alert_count = 0;
   for (int i = 0; i < cohort_count; i++) {
-    CohortStats *c = &cohorts[i];
+    CohortSummary *c = &summaries[i];
     if (c->count < min_cohort_size) continue;
-    double high_ratio = c->count ? (double)c->high / c->count : 0;
-    if (high_ratio < alert_threshold) continue;
-    double avg_att = c->count ? c->attendance_sum / c->count : 0;
-    double avg_sat = c->count ? c->satisfaction_sum / c->count : 0;
-    double avg_days = c->count ? c->days_since_sum / c->count : 0;
+    if (c->high_share < alert_threshold) continue;
     CohortAlert alert;
     memset(&alert, 0, sizeof(CohortAlert));
-    snprintf(alert.cohort, MAX_NAME, "%s", c->name);
+    snprintf(alert.cohort, MAX_NAME, "%s", c->cohort);
     alert.count = c->count;
     alert.high = c->high;
     alert.medium = c->medium;
     alert.low = c->low;
-    alert.high_ratio = high_ratio;
-    alert.risk_index = cohort_risk_index(c->high, c->medium, c->low);
-    alert.avg_days = avg_days;
-    alert.avg_attendance = avg_att;
-    alert.avg_satisfaction = avg_sat;
+    alert.high_ratio = c->high_share;
+    alert.risk_index = c->risk_index;
+    alert.avg_days = c->avg_days;
+    alert.avg_attendance = c->avg_attendance;
+    alert.avg_satisfaction = c->avg_satisfaction;
     alerts[alert_count++] = alert;
   }
 
   if (alert_count > 0) {
+    qsort(alerts, alert_count, sizeof(CohortAlert), compare_alerts);
     printf("\nCohort alerts (high-risk share >= %.2f, min size %d)\n", alert_threshold, min_cohort_size);
     printf("Cohort\tHighShare\tRiskIndex\tCount\tHigh\tMedium\tLow\tAvgDays\tAvgAttend\tAvgSatisfaction\n");
     for (int i = 0; i < alert_count; i++) {
@@ -501,6 +620,9 @@ int main(int argc, char **argv) {
       fprintf(jf, "  \"reference_date\": \"%s\",\n", as_of_str ? as_of_str : "today");
       fprintf(jf, "  \"records\": {\"valid\": %d, \"invalid\": %d},\n",
               valid_count, invalid_rows);
+      fprintf(jf, "  \"cohort_sort\": \"%s\",\n", cohort_sort);
+      fprintf(jf, "  \"cohort_total\": %d,\n", cohort_count);
+      fprintf(jf, "  \"cohort_limit\": %d,\n", cohort_display);
       if (cohort_filter_count > 0) {
         fprintf(jf, "  \"cohort_filter\": [");
         for (int i = 0; i < cohort_filter_count; i++) {
@@ -524,17 +646,12 @@ int main(int argc, char **argv) {
       }
       fprintf(jf, "  ],\n");
       fprintf(jf, "  \"cohorts\": [\n");
-      for (int i = 0; i < cohort_count; i++) {
-        CohortStats *c = &cohorts[i];
-        double avg_touch = c->count ? (double)c->touchpoints_sum / c->count : 0;
-        double avg_att = c->count ? c->attendance_sum / c->count : 0;
-        double avg_sat = c->count ? c->satisfaction_sum / c->count : 0;
-        double avg_days = c->count ? c->days_since_sum / c->count : 0;
-        double risk_index = cohort_risk_index(c->high, c->medium, c->low);
-        fprintf(jf, "    {\"cohort\": \"%s\", \"count\": %d, \"high\": %d, \"medium\": %d, \"low\": %d, \"risk_index\": %.2f, \"avg_touchpoints_30d\": %.2f, \"avg_attendance\": %.2f, \"avg_satisfaction\": %.2f, \"avg_days_since\": %.1f}%s\n",
-                c->name, c->count, c->high, c->medium, c->low,
-                risk_index, avg_touch, avg_att, avg_sat, avg_days,
-                (i == cohort_count - 1) ? "" : ",");
+      for (int i = 0; i < cohort_display; i++) {
+        CohortSummary *c = &summaries[i];
+        fprintf(jf, "    {\"cohort\": \"%s\", \"count\": %d, \"high\": %d, \"medium\": %d, \"low\": %d, \"high_share\": %.2f, \"risk_index\": %.2f, \"avg_touchpoints_30d\": %.2f, \"avg_attendance\": %.2f, \"avg_satisfaction\": %.2f, \"avg_days_since\": %.1f}%s\n",
+                c->cohort, c->count, c->high, c->medium, c->low, c->high_share,
+                c->risk_index, c->avg_touchpoints, c->avg_attendance, c->avg_satisfaction, c->avg_days,
+                (i == cohort_display - 1) ? "" : ",");
       }
       fprintf(jf, "  ],\n");
       fprintf(jf, "  \"alerts\": [\n");
@@ -553,6 +670,7 @@ int main(int argc, char **argv) {
 
   free(risks);
   free(scholars);
+  free(summaries);
   free(cohort_filter_buffer);
   free(cohort_filters);
 
