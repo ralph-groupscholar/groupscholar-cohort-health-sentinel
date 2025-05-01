@@ -35,3 +35,8 @@
 - Added cohort summary sorting/limiting with high-risk share metrics in CLI and JSON output.
 - Introduced alert sorting plus cohort metadata in JSON payload.
 - Added smoke tests and updated README usage/testing notes.
+
+## 2026-02-08
+- Added invalid row breakdown (columns, numeric parsing, date format) to CLI output and JSON.
+- Extended Postgres sync and ingestion scripts to persist invalid breakdown metrics.
+- Updated tests and README to cover the new data quality metrics.

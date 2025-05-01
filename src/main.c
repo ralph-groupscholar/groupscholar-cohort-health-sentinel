@@ -386,6 +386,9 @@ int main(int argc, char **argv) {
   int missing_dates = 0;
   int missing_ids = 0;
   int invalid_rows = 0;
+  int invalid_columns = 0;
+  int invalid_numeric = 0;
+  int invalid_date_format = 0;
   int future_dates = 0;
 
   while (fgets(line, sizeof(line), fp)) {
@@ -407,6 +410,7 @@ int main(int argc, char **argv) {
 
     if (field_count < 6) {
       invalid_rows++;
+      invalid_columns++;
       continue;
     }
 
@@ -432,9 +436,20 @@ int main(int argc, char **argv) {
       s.valid = 0;
     }
 
-    if (!parse_int(fields[3], &s.touchpoints_30d)) s.valid = 0;
-    if (!parse_double(fields[4], &s.attendance_rate)) s.valid = 0;
-    if (!parse_double(fields[5], &s.satisfaction_score)) s.valid = 0;
+    int numeric_invalid = 0;
+    if (!parse_int(fields[3], &s.touchpoints_30d)) {
+      s.valid = 0;
+      numeric_invalid = 1;
+    }
+    if (!parse_double(fields[4], &s.attendance_rate)) {
+      s.valid = 0;
+      numeric_invalid = 1;
+    }
+    if (!parse_double(fields[5], &s.satisfaction_score)) {
+      s.valid = 0;
+      numeric_invalid = 1;
+    }
+    if (numeric_invalid) invalid_numeric++;
 
     scholars[count++] = s;
   }
@@ -466,6 +481,7 @@ int main(int argc, char **argv) {
     struct tm touch_tm;
     if (!parse_date(s->last_touchpoint, &touch_tm)) {
       invalid_rows++;
+      invalid_date_format++;
       continue;
     }
 
@@ -515,6 +531,8 @@ int main(int argc, char **argv) {
   printf("Reference date: %s\n", as_of_str ? as_of_str : "today");
   printf("Records: %d valid, %d invalid\n", valid_count, invalid_rows);
   printf("Missing IDs: %d | Missing dates: %d | Future dates: %d\n", missing_ids, missing_dates, future_dates);
+  printf("Invalid breakdown: columns %d | numeric %d | date format %d\n",
+         invalid_columns, invalid_numeric, invalid_date_format);
   printf("Risk mix: %d high | %d medium | %d low\n\n", high_count, medium_count, low_count);
 
   if (limit > 0) {
@@ -631,6 +649,8 @@ int main(int argc, char **argv) {
         fprintf(jf, "],\n");
       }
       fprintf(jf, "  \"missing\": {\"ids\": %d, \"dates\": %d},\n", missing_ids, missing_dates);
+      fprintf(jf, "  \"invalid_breakdown\": {\"columns\": %d, \"numeric\": %d, \"date_format\": %d},\n",
+              invalid_columns, invalid_numeric, invalid_date_format);
       fprintf(jf, "  \"date_anomalies\": {\"future_dates\": %d},\n", future_dates);
       fprintf(jf, "  \"risk_mix\": {\"high\": %d, \"medium\": %d, \"low\": %d},\n",
               high_count, medium_count, low_count);

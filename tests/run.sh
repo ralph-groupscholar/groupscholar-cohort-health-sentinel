@@ -27,6 +27,10 @@ assert payload["cohorts"], "expected at least one cohort"
 for key in ("high_share", "risk_index", "avg_touchpoints_30d"):
     if key not in payload["cohorts"][0]:
         raise AssertionError(f"missing {key} in cohort summary")
+invalid_breakdown = payload.get("invalid_breakdown", {})
+for key in ("columns", "numeric", "date_format"):
+    if key not in invalid_breakdown:
+        raise AssertionError(f"missing invalid_breakdown.{key}")
 PY
 
 rm -f "$json_tmp"
