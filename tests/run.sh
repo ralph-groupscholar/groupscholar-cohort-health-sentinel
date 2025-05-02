@@ -28,11 +28,52 @@ for key in ("high_share", "risk_index", "avg_touchpoints_30d"):
     if key not in payload["cohorts"][0]:
         raise AssertionError(f"missing {key} in cohort summary")
 invalid_breakdown = payload.get("invalid_breakdown", {})
-for key in ("columns", "numeric", "date_format"):
+for key in ("columns", "numeric", "date_format", "range"):
     if key not in invalid_breakdown:
         raise AssertionError(f"missing invalid_breakdown.{key}")
+if "clamped_values" not in payload:
+    raise AssertionError("missing clamped_values in payload")
 PY
 
 rm -f "$json_tmp"
+
+range_csv=$(mktemp)
+cat > "$range_csv" <<'CSV'
+scholar_id,cohort,last_touchpoint_date,touchpoints_last_30d,attendance_rate,satisfaction_score
+S-9001,RangeTest,2026-01-10,-1,1.20,6.0
+S-9002,RangeTest,2026-01-12,2,0.80,4.2
+CSV
+
+range_json=$(mktemp)
+./cohort-health-sentinel --input "$range_csv" --json "$range_json" > /dev/null
+python3 - "$range_json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as fh:
+    payload = json.load(fh)
+
+assert payload["records"]["invalid"] > 0
+assert payload["invalid_breakdown"]["range"] > 0
+assert payload["clamped_values"] == 0
+PY
+
+clamp_json=$(mktemp)
+./cohort-health-sentinel --input "$range_csv" --json "$clamp_json" --clamp-ranges > /dev/null
+python3 - "$clamp_json" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, "r", encoding="utf-8") as fh:
+    payload = json.load(fh)
+
+assert payload["records"]["invalid"] == 0
+assert payload["invalid_breakdown"]["range"] == 0
+assert payload["clamped_values"] >= 1
+PY
+
+rm -f "$range_csv" "$range_json" "$clamp_json"
 
 echo "All tests passed."

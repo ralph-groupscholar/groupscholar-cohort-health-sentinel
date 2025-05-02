@@ -40,3 +40,8 @@
 - Added invalid row breakdown (columns, numeric parsing, date format) to CLI output and JSON.
 - Extended Postgres sync and ingestion scripts to persist invalid breakdown metrics.
 - Updated tests and README to cover the new data quality metrics.
+
+## 2026-02-08
+- Added out-of-range value detection with optional clamping via `--clamp-ranges`.
+- Expanded JSON, CLI summaries, and Postgres schemas to capture range issues and clamped values.
+- Extended smoke tests to validate range handling and clamping behavior.

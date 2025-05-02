@@ -53,6 +53,12 @@ Sort cohorts by high-risk share and show only the top 5:
 ./cohort-health-sentinel --input data/sample.csv --cohort-sort high --cohort-limit 5
 ```
 
+Clamp out-of-range numeric values instead of marking rows invalid:
+
+```
+./cohort-health-sentinel --input data/sample.csv --clamp-ranges
+```
+
 Write JSON output:
 
 ```
@@ -79,8 +85,9 @@ python3 scripts/db_sync.py --json output.json
 The CLI prints:
 - Total valid/invalid rows
 - Missing ID/date counts
-- Invalid row breakdown (columns, numeric parsing, date format)
+- Invalid row breakdown (columns, numeric parsing, date format, range)
 - Future-dated touchpoints (clamped to 0 days since)
+- Clamped out-of-range numeric values
 - Risk mix (high/medium/low)
 - Top risk entries
 - Cohort-level averages, risk distribution, high-risk share, and risk index (sorted and optionally limited)

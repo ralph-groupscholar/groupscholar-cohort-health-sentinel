@@ -51,6 +51,8 @@ def setup_schema(conn, schema):
             invalid_columns INT NOT NULL DEFAULT 0,
             invalid_numeric INT NOT NULL DEFAULT 0,
             invalid_date_format INT NOT NULL DEFAULT 0,
+            invalid_range INT NOT NULL DEFAULT 0,
+            clamped_values INT NOT NULL DEFAULT 0,
             missing_ids INT NOT NULL,
             missing_dates INT NOT NULL,
             future_dates INT NOT NULL DEFAULT 0,
@@ -77,6 +79,14 @@ def setup_schema(conn, schema):
     conn.execute(text(f"""
         ALTER TABLE {schema}.reports
         ADD COLUMN IF NOT EXISTS invalid_date_format INT NOT NULL DEFAULT 0
+    """))
+    conn.execute(text(f"""
+        ALTER TABLE {schema}.reports
+        ADD COLUMN IF NOT EXISTS invalid_range INT NOT NULL DEFAULT 0
+    """))
+    conn.execute(text(f"""
+        ALTER TABLE {schema}.reports
+        ADD COLUMN IF NOT EXISTS clamped_values INT NOT NULL DEFAULT 0
     """))
     conn.execute(text(f"""
         CREATE TABLE IF NOT EXISTS {schema}.top_risks (
@@ -149,13 +159,15 @@ def ingest_report(conn, schema, report, source_label):
         text(f"""
             INSERT INTO {schema}.reports (
                 reference_date, cohort_filter, valid_records, invalid_records,
-                invalid_columns, invalid_numeric, invalid_date_format, missing_ids, missing_dates,
+                invalid_columns, invalid_numeric, invalid_date_format, invalid_range, clamped_values,
+                missing_ids, missing_dates,
                 future_dates, risk_high, risk_medium, risk_low,
                 alert_threshold, min_cohort_size, source_label
             )
             VALUES (
                 :reference_date, :cohort_filter, :valid_records, :invalid_records,
-                :invalid_columns, :invalid_numeric, :invalid_date_format, :missing_ids, :missing_dates,
+                :invalid_columns, :invalid_numeric, :invalid_date_format, :invalid_range, :clamped_values,
+                :missing_ids, :missing_dates,
                 :future_dates, :risk_high, :risk_medium, :risk_low,
                 :alert_threshold, :min_cohort_size, :source_label
             )
@@ -169,6 +181,8 @@ def ingest_report(conn, schema, report, source_label):
             "invalid_columns": invalid_breakdown.get("columns", 0),
             "invalid_numeric": invalid_breakdown.get("numeric", 0),
             "invalid_date_format": invalid_breakdown.get("date_format", 0),
+            "invalid_range": invalid_breakdown.get("range", 0),
+            "clamped_values": report.get("clamped_values", 0),
             "missing_ids": missing.get("ids", 0),
             "missing_dates": missing.get("dates", 0),
             "future_dates": date_anomalies.get("future_dates", 0),

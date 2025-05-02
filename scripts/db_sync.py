@@ -44,6 +44,8 @@ def ensure_schema(cur) -> None:
             invalid_columns INTEGER NOT NULL DEFAULT 0,
             invalid_numeric INTEGER NOT NULL DEFAULT 0,
             invalid_date_format INTEGER NOT NULL DEFAULT 0,
+            invalid_range INTEGER NOT NULL DEFAULT 0,
+            clamped_values INTEGER NOT NULL DEFAULT 0,
             missing_ids INTEGER NOT NULL,
             missing_dates INTEGER NOT NULL,
             future_dates INTEGER NOT NULL DEFAULT 0
@@ -72,6 +74,18 @@ def ensure_schema(cur) -> None:
         f"""
         ALTER TABLE {SCHEMA}.runs
         ADD COLUMN IF NOT EXISTS invalid_date_format INTEGER NOT NULL DEFAULT 0;
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE {SCHEMA}.runs
+        ADD COLUMN IF NOT EXISTS invalid_range INTEGER NOT NULL DEFAULT 0;
+        """
+    )
+    cur.execute(
+        f"""
+        ALTER TABLE {SCHEMA}.runs
+        ADD COLUMN IF NOT EXISTS clamped_values INTEGER NOT NULL DEFAULT 0;
         """
     )
     cur.execute(
@@ -176,8 +190,9 @@ def main() -> None:
                     f"""
                     INSERT INTO {SCHEMA}.runs
                       (reference_date, alert_threshold, min_cohort_size, valid_count, invalid_count,
-                       invalid_columns, invalid_numeric, invalid_date_format, missing_ids, missing_dates, future_dates)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       invalid_columns, invalid_numeric, invalid_date_format, invalid_range, clamped_values,
+                       missing_ids, missing_dates, future_dates)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id;
                     """,
                     (
@@ -189,6 +204,8 @@ def main() -> None:
                         invalid_breakdown.get("columns", 0),
                         invalid_breakdown.get("numeric", 0),
                         invalid_breakdown.get("date_format", 0),
+                        invalid_breakdown.get("range", 0),
+                        payload.get("clamped_values", 0),
                         missing.get("ids", 0),
                         missing.get("dates", 0),
                         date_anomalies.get("future_dates", 0),

@@ -179,12 +179,14 @@ static int matches_cohort(const char *cohort, char **filters, int filter_count) 
 
 static void usage(const char *name) {
   printf("Group Scholar Cohort Health Sentinel\n\n");
-  printf("Usage: %s --input <file> [--json <file>] [--as-of YYYY-MM-DD] [--limit N]\n", name);
+  printf("Usage: %s --input <file> [--json <file>] [--cohort-csv <file>] [--alert-csv <file>] [--as-of YYYY-MM-DD] [--limit N]\n", name);
   printf("          [--alert-threshold PCT] [--min-cohort-size N] [--cohort NAME[,NAME]]\n");
-  printf("          [--cohort-sort risk|high|name] [--cohort-limit N]\n\n");
+  printf("          [--cohort-sort risk|high|name] [--cohort-limit N] [--clamp-ranges]\n\n");
   printf("Options:\n");
   printf("  --input   CSV file with scholar engagement data\n");
   printf("  --json    Write JSON output to file\n");
+  printf("  --cohort-csv  Write cohort summary CSV to file\n");
+  printf("  --alert-csv  Write cohort alert CSV to file\n");
   printf("  --as-of   Reference date for recency calculations\n");
   printf("  --limit   Limit number of risk entries shown (default 10)\n");
   printf("  --cohort-sort   Sort cohort summary by risk, high, or name (default risk)\n");
@@ -192,6 +194,7 @@ static void usage(const char *name) {
   printf("  --alert-threshold  High-risk share that triggers cohort alert (default 0.30)\n");
   printf("  --min-cohort-size  Minimum cohort size for alerts (default 5)\n");
   printf("  --cohort  Filter results to one or more cohorts (comma-separated)\n");
+  printf("  --clamp-ranges  Clamp out-of-range numeric values instead of marking invalid\n");
 }
 
 static int find_or_add_cohort(CohortStats *cohorts, int *count, const char *name) {
@@ -253,6 +256,8 @@ static int compare_alerts(const void *a, const void *b) {
 int main(int argc, char **argv) {
   const char *input = NULL;
   const char *json_path = NULL;
+  const char *cohort_csv_path = NULL;
+  const char *alert_csv_path = NULL;
   const char *as_of_str = NULL;
   const char *cohort_filter = NULL;
   const char *cohort_sort = "risk";
@@ -260,6 +265,7 @@ int main(int argc, char **argv) {
   int cohort_limit = -1;
   double alert_threshold = 0.30;
   int min_cohort_size = 5;
+  int clamp_ranges = 0;
   char *cohort_filter_buffer = NULL;
   char **cohort_filters = NULL;
   int cohort_filter_count = 0;
@@ -269,6 +275,10 @@ int main(int argc, char **argv) {
       input = argv[++i];
     } else if (strcmp(argv[i], "--json") == 0 && i + 1 < argc) {
       json_path = argv[++i];
+    } else if (strcmp(argv[i], "--cohort-csv") == 0 && i + 1 < argc) {
+      cohort_csv_path = argv[++i];
+    } else if (strcmp(argv[i], "--alert-csv") == 0 && i + 1 < argc) {
+      alert_csv_path = argv[++i];
     } else if (strcmp(argv[i], "--as-of") == 0 && i + 1 < argc) {
       as_of_str = argv[++i];
     } else if (strcmp(argv[i], "--cohort") == 0 && i + 1 < argc) {
@@ -292,6 +302,8 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Invalid --min-cohort-size value.\n");
         return 1;
       }
+    } else if (strcmp(argv[i], "--clamp-ranges") == 0) {
+      clamp_ranges = 1;
     } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
       usage(argv[0]);
       return 0;
@@ -389,7 +401,18 @@ int main(int argc, char **argv) {
   int invalid_columns = 0;
   int invalid_numeric = 0;
   int invalid_date_format = 0;
+  int invalid_range = 0;
   int future_dates = 0;
+  int clamped_values = 0;
+  int recency_over_30 = 0;
+  int recency_15_30 = 0;
+  int recency_8_14 = 0;
+  int touchpoints_zero = 0;
+  int touchpoints_one = 0;
+  int attendance_low = 0;
+  int attendance_mid = 0;
+  int satisfaction_low = 0;
+  int satisfaction_mid = 0;
 
   while (fgets(line, sizeof(line), fp)) {
     line_num++;
@@ -440,14 +463,40 @@ int main(int argc, char **argv) {
     if (!parse_int(fields[3], &s.touchpoints_30d)) {
       s.valid = 0;
       numeric_invalid = 1;
+    } else if (s.touchpoints_30d < 0) {
+      if (clamp_ranges) {
+        s.touchpoints_30d = 0;
+        clamped_values++;
+      } else {
+        s.valid = 0;
+        invalid_range++;
+      }
     }
     if (!parse_double(fields[4], &s.attendance_rate)) {
       s.valid = 0;
       numeric_invalid = 1;
+    } else if (s.attendance_rate < 0 || s.attendance_rate > 1.0) {
+      if (clamp_ranges) {
+        if (s.attendance_rate < 0) s.attendance_rate = 0;
+        if (s.attendance_rate > 1.0) s.attendance_rate = 1.0;
+        clamped_values++;
+      } else {
+        s.valid = 0;
+        invalid_range++;
+      }
     }
     if (!parse_double(fields[5], &s.satisfaction_score)) {
       s.valid = 0;
       numeric_invalid = 1;
+    } else if (s.satisfaction_score < 1.0 || s.satisfaction_score > 5.0) {
+      if (clamp_ranges) {
+        if (s.satisfaction_score < 1.0) s.satisfaction_score = 1.0;
+        if (s.satisfaction_score > 5.0) s.satisfaction_score = 5.0;
+        clamped_values++;
+      } else {
+        s.valid = 0;
+        invalid_range++;
+      }
     }
     if (numeric_invalid) invalid_numeric++;
 
@@ -491,6 +540,15 @@ int main(int argc, char **argv) {
       future_dates++;
       days_since = 0;
     }
+    if (days_since > 30) recency_over_30++;
+    else if (days_since > 14) recency_15_30++;
+    else if (days_since > 7) recency_8_14++;
+    if (s->touchpoints_30d == 0) touchpoints_zero++;
+    else if (s->touchpoints_30d <= 1) touchpoints_one++;
+    if (s->attendance_rate < 0.6) attendance_low++;
+    else if (s->attendance_rate < 0.8) attendance_mid++;
+    if (s->satisfaction_score < 3.0) satisfaction_low++;
+    else if (s->satisfaction_score < 4.0) satisfaction_mid++;
     int score = risk_score_for(days_since, s->touchpoints_30d, s->attendance_rate, s->satisfaction_score);
 
     const char *label = risk_label(score);
@@ -531,9 +589,14 @@ int main(int argc, char **argv) {
   printf("Reference date: %s\n", as_of_str ? as_of_str : "today");
   printf("Records: %d valid, %d invalid\n", valid_count, invalid_rows);
   printf("Missing IDs: %d | Missing dates: %d | Future dates: %d\n", missing_ids, missing_dates, future_dates);
-  printf("Invalid breakdown: columns %d | numeric %d | date format %d\n",
-         invalid_columns, invalid_numeric, invalid_date_format);
-  printf("Risk mix: %d high | %d medium | %d low\n\n", high_count, medium_count, low_count);
+  printf("Invalid breakdown: columns %d | numeric %d | date format %d | range %d\n",
+         invalid_columns, invalid_numeric, invalid_date_format, invalid_range);
+  printf("Clamped values: %d\n", clamped_values);
+  printf("Risk mix: %d high | %d medium | %d low\n", high_count, medium_count, low_count);
+  printf("Risk drivers: recency>30 %d | recency15-30 %d | recency8-14 %d\n",
+         recency_over_30, recency_15_30, recency_8_14);
+  printf("              touchpoints0 %d | touchpoints1 %d | attendance<0.6 %d | attendance<0.8 %d | satisfaction<3 %d | satisfaction<4 %d\n\n",
+         touchpoints_zero, touchpoints_one, attendance_low, attendance_mid, satisfaction_low, satisfaction_mid);
 
   if (limit > 0) {
     printf("Top %d risk entries\n", limit);
@@ -649,11 +712,15 @@ int main(int argc, char **argv) {
         fprintf(jf, "],\n");
       }
       fprintf(jf, "  \"missing\": {\"ids\": %d, \"dates\": %d},\n", missing_ids, missing_dates);
-      fprintf(jf, "  \"invalid_breakdown\": {\"columns\": %d, \"numeric\": %d, \"date_format\": %d},\n",
-              invalid_columns, invalid_numeric, invalid_date_format);
+      fprintf(jf, "  \"invalid_breakdown\": {\"columns\": %d, \"numeric\": %d, \"date_format\": %d, \"range\": %d},\n",
+              invalid_columns, invalid_numeric, invalid_date_format, invalid_range);
+      fprintf(jf, "  \"clamped_values\": %d,\n", clamped_values);
       fprintf(jf, "  \"date_anomalies\": {\"future_dates\": %d},\n", future_dates);
       fprintf(jf, "  \"risk_mix\": {\"high\": %d, \"medium\": %d, \"low\": %d},\n",
               high_count, medium_count, low_count);
+      fprintf(jf, "  \"risk_drivers\": {\"recency_over_30\": %d, \"recency_15_30\": %d, \"recency_8_14\": %d, \"touchpoints_zero\": %d, \"touchpoints_one\": %d, \"attendance_low\": %d, \"attendance_mid\": %d, \"satisfaction_low\": %d, \"satisfaction_mid\": %d},\n",
+              recency_over_30, recency_15_30, recency_8_14, touchpoints_zero, touchpoints_one,
+              attendance_low, attendance_mid, satisfaction_low, satisfaction_mid);
       fprintf(jf, "  \"alert_threshold\": %.2f,\n", alert_threshold);
       fprintf(jf, "  \"min_cohort_size\": %d,\n", min_cohort_size);
       fprintf(jf, "  \"top_risks\": [\n");
