@@ -45,3 +45,7 @@
 - Added out-of-range value detection with optional clamping via `--clamp-ranges`.
 - Expanded JSON, CLI summaries, and Postgres schemas to capture range issues and clamped values.
 - Extended smoke tests to validate range handling and clamping behavior.
+
+## 2026-02-08
+- Added CSV export options for cohort summaries and alerts.
+- Updated CLI help, README usage, and tests to cover CSV outputs.

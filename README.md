@@ -12,6 +12,7 @@ Group Scholar Cohort Health Sentinel is a lightweight C CLI that audits cohort e
 - Optional cohort filtering for focused reviews
 - Cohort summary sorting and limiting for triage-ready dashboards
 - Optional JSON output for downstream workflows
+- CSV export for cohort summaries and alerts
 - Optional Postgres sync for cohort health snapshots
 
 ## Data format
@@ -63,6 +64,12 @@ Write JSON output:
 
 ```
 ./cohort-health-sentinel --input data/sample.csv --json output.json --alert-threshold 0.30
+```
+
+Write cohort summary and alert CSVs:
+
+```
+./cohort-health-sentinel --input data/sample.csv --cohort-csv cohort-summary.csv --alert-csv cohort-alerts.csv
 ```
 
 Sync JSON output to Postgres:

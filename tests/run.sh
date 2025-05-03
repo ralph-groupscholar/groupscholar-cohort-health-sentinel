@@ -76,4 +76,11 @@ PY
 
 rm -f "$range_csv" "$range_json" "$clamp_json"
 
+cohort_csv=$(mktemp)
+alert_csv=$(mktemp)
+./cohort-health-sentinel --input data/sample.csv --cohort-csv "$cohort_csv" --alert-csv "$alert_csv" --cohort-limit 2 > /dev/null
+head -n 1 "$cohort_csv" | grep -q "cohort,count,high,medium,low,high_share,risk_index,avg_touchpoints_30d,avg_attendance,avg_satisfaction,avg_days_since"
+head -n 1 "$alert_csv" | grep -q "cohort,high_share,risk_index,count,high,medium,low,avg_days_since,avg_attendance,avg_satisfaction"
+rm -f "$cohort_csv" "$alert_csv"
+
 echo "All tests passed."

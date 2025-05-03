@@ -656,6 +656,22 @@ int main(int argc, char **argv) {
     }
   }
 
+  if (cohort_csv_path) {
+    FILE *cf = fopen(cohort_csv_path, "w");
+    if (!cf) {
+      perror("Failed to write cohort CSV output");
+    } else {
+      fprintf(cf, "cohort,count,high,medium,low,high_share,risk_index,avg_touchpoints_30d,avg_attendance,avg_satisfaction,avg_days_since\n");
+      for (int i = 0; i < cohort_display; i++) {
+        CohortSummary *c = &summaries[i];
+        fprintf(cf, "%s,%d,%d,%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.1f\n",
+                c->cohort, c->count, c->high, c->medium, c->low, c->high_share,
+                c->risk_index, c->avg_touchpoints, c->avg_attendance, c->avg_satisfaction, c->avg_days);
+      }
+      fclose(cf);
+    }
+  }
+
   CohortAlert alerts[200];
   int alert_count = 0;
   for (int i = 0; i < cohort_count; i++) {
@@ -690,6 +706,22 @@ int main(int argc, char **argv) {
   } else {
     printf("\nCohort alerts (high-risk share >= %.2f, min size %d)\n", alert_threshold, min_cohort_size);
     printf("None\n");
+  }
+
+  if (alert_csv_path) {
+    FILE *af = fopen(alert_csv_path, "w");
+    if (!af) {
+      perror("Failed to write alert CSV output");
+    } else {
+      fprintf(af, "cohort,high_share,risk_index,count,high,medium,low,avg_days_since,avg_attendance,avg_satisfaction\n");
+      for (int i = 0; i < alert_count; i++) {
+        CohortAlert *a = &alerts[i];
+        fprintf(af, "%s,%.2f,%.2f,%d,%d,%d,%d,%.1f,%.2f,%.2f\n",
+                a->cohort, a->high_ratio, a->risk_index, a->count, a->high, a->medium, a->low,
+                a->avg_days, a->avg_attendance, a->avg_satisfaction);
+      }
+      fclose(af);
+    }
   }
 
   if (json_path) {
